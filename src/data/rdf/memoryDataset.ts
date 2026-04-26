@@ -1,4 +1,4 @@
-import { HashMap, dropHighestNonSignBit } from '@reactodia/hashmap';
+import { HashMap, dropHighestNonSignBit } from '../../hashmap';
 
 import {
     Quad, Term, DefaultDataFactory, hashTerm, equalTerms, hashQuad, equalQuads,

@@ -1,4 +1,4 @@
-import type { RefCountedWorker } from '@reactodia/worker-proxy';
+import type { RefCountedWorker } from '../worker-proxy/workers';
 import * as React from 'react';
 
 /**
@@ -7,7 +7,7 @@ import * as React from 'react';
  * The worker instance will be created on the first call and
  * disposed when the last component using the hook is unmounted.
  *
- * See [`@reactodia/worker-proxy`](https://github.com/reactodia/worker-proxy)
+ * See [`../worker-proxy`](https://github.com/reactodia/worker-proxy)
  * for more information on working with transparent Web Worker proxies.
  *
  * @category Hooks

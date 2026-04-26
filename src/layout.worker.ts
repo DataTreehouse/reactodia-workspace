@@ -1,4 +1,4 @@
-import { connectWorker } from '@reactodia/worker-proxy/protocol';
+import { connectWorker } from './worker-proxy/protocol';
 
 import type { LayoutGraph, LayoutState } from './diagram/layout';
 import {

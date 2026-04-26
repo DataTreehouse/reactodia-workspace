@@ -1,4 +1,4 @@
-import type { ReadonlyHashMap } from '@reactodia/hashmap';
+import type { ReadonlyHashMap } from '../hashmap';
 
 import { AbortScope } from '../coreUtils/async';
 import { AnyEvent, EventSource, Events } from '../coreUtils/events';

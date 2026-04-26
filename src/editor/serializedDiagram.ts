@@ -1,4 +1,4 @@
-import type { ReadonlyHashMap } from '@reactodia/hashmap';
+import type { ReadonlyHashMap } from '../hashmap';
 
 import { ElementIri, ElementModel, LinkKey, LinkModel, LinkTypeIri } from '../data/model';
 import {

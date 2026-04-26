@@ -9,15 +9,15 @@ import { playwright } from '@vitest/browser-playwright';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const EXAMPLES = [
-    'basic',
+    //'basic',
     'classicWorkspace',
-    'graphAuthoring',
-    'i18n',
-    'rdfExplorer',
-    'sparql',
-    'stressTest',
-    'styleCustomization',
-    'wikidata'
+//     'graphAuthoring',
+//     'i18n',
+//     'rdfExplorer',
+//     'sparql',
+//     'stressTest',
+//     'styleCustomization',
+//     'wikidata'
 ];
 
 export default defineConfig(({ command, mode }) => {
@@ -118,9 +118,6 @@ export default defineConfig(({ command, mode }) => {
                         ? common.build.rollupOptions.input
                         : undefined,
                     external: [
-                        '@reactodia/hashmap',
-                        '@reactodia/worker-proxy',
-                        '@reactodia/worker-proxy/protocol',
                         'clsx',
                         'd3-color',
                         'file-saver',

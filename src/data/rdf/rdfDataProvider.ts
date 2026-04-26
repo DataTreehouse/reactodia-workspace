@@ -1,4 +1,4 @@
-import { HashMap, HashSet } from '@reactodia/hashmap';
+import { HashMap, HashSet } from '../../hashmap';
 
 import {
     ElementTypeGraph, ElementTypeModel, LinkTypeModel, ElementModel, LinkModel, PropertyTypeModel,

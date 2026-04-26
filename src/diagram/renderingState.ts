@@ -1,4 +1,4 @@
-import { HashMap } from '@reactodia/hashmap';
+import { HashMap } from '../hashmap';
 import * as React from 'react';
 
 import { multimapAdd, multimapDelete } from '../coreUtils/collections';

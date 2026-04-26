@@ -1,4 +1,4 @@
-import { HashSet } from '@reactodia/hashmap';
+import { HashSet } from '../../hashmap';
 
 import * as Rdf from '../rdf/rdfModel';
 import {
