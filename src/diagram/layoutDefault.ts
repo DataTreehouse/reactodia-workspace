@@ -1,4 +1,4 @@
-import { RefCountedWorker, refCountedWorker } from '@reactodia/worker-proxy';
+import { RefCountedWorker, refCountedWorker } from '../worker-proxy/workers';
 
 import type { DefaultLayouts } from '../layout.worker';
 

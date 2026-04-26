@@ -1,4 +1,4 @@
-import { HashMap, hashString } from '@reactodia/hashmap';
+import { HashMap, hashString } from '../../hashmap';
 
 import { Sha256 } from './sha256';
 

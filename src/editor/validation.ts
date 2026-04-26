@@ -1,4 +1,4 @@
-import { HashMap, type ReadonlyHashMap } from '@reactodia/hashmap';
+import { HashMap, type ReadonlyHashMap } from '../hashmap';
 
 import { mapAbortedToNull } from '../coreUtils/async';
 import type { Translation } from '../coreUtils/i18n';

@@ -1,4 +1,4 @@
-import { HashMap } from '@reactodia/hashmap';
+import { HashMap } from '../../src/hashmap';
 import * as React from 'react';
 import * as ReactDOM from 'react-dom';
 import { saveAs } from 'file-saver';

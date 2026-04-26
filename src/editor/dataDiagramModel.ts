@@ -1,4 +1,4 @@
-import type { ReadonlyHashMap } from '@reactodia/hashmap';
+import type { ReadonlyHashMap } from '../hashmap';
 
 import { AnyEvent, EventSource, Events } from '../coreUtils/events';
 import { Translation, TranslatedText } from '../coreUtils/i18n';

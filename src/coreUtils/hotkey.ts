@@ -1,4 +1,4 @@
-import { hashNumber, hashString, chainHash, dropHighestNonSignBit } from '@reactodia/hashmap';
+import { hashNumber, hashString, chainHash, dropHighestNonSignBit } from '../hashmap';
 import * as React from 'react';
 
 /**

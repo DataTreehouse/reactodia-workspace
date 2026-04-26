@@ -6,9 +6,16 @@ import { SemanticTypeStyles, makeOntologyLinkTemplates } from '../src/legacy-sty
 const OntologyLinkTemplates = makeOntologyLinkTemplates(Reactodia);
 
 import { ExampleMetadataProvider, ExampleValidationProvider } from './resources/exampleMetadata';
-import { ExampleToolbarMenu, mountOnLoad, tryLoadLayoutFromLocalStorage } from './resources/common';
-
-import TURTLE_DATA from './resources/orgOntology.ttl?raw';
+import {
+    ExampleToolbarMenu,
+    mountOnLoad,
+    tryLoadLayoutFromLocalStorage,
+    getHashQuery,
+    setHashQueryParam
+    } from './resources/common';
+import {
+    SparqlConnectionSettings, SparqlConnectionAction, showConnectionDialog,
+} from './resources/sparqlConnection';
 
 const Layouts = Reactodia.defineLayoutWorker(() => new Worker(
     new URL('../src/layout.worker.ts', import.meta.url),
@@ -18,26 +25,38 @@ const Layouts = Reactodia.defineLayoutWorker(() => new Worker(
 function ClassicWorkspaceExample() {
     const {defaultLayout} = Reactodia.useWorker(Layouts);
 
-    const [turtleData, setTurtleData] = React.useState(TURTLE_DATA);
+    const [connectionSettings, setConnectionSettings] = React.useState(
+        (): SparqlConnectionSettings | undefined => {
+            const params = getHashQuery();
+            const endpointUrl = "@ENDPOINT_URL@";
+            return endpointUrl ? {
+                endpointUrl,
+            } : undefined;
+        }
+    );
+    const applyConnectionSettings = (settings: SparqlConnectionSettings) => {
+        setHashQueryParam('sparql-endpoint', settings.endpointUrl);
+        setConnectionSettings(settings);
+    };
+
     const {onMount} = Reactodia.useLoadedWorkspace(async ({context, signal}) => {
         const {model, editor} = context;
         editor.setAuthoringMode(true);
 
-        const dataProvider = new Reactodia.RdfDataProvider();
-        try {
-            dataProvider.addGraph(new N3.Parser().parse(turtleData));
-        } catch (err) {
-            throw new Error('Error parsing RDF graph data', {cause: err});
-        }
-    
         const diagram = tryLoadLayoutFromLocalStorage();
+        const dataProvider = new Reactodia.SparqlDataProvider({
+                endpointUrl: connectionSettings.endpointUrl,
+                imagePropertyUris: ['http://xmlns.com/foaf/0.1/img'],
+                queryMethod: 'POST',
+            }, Reactodia.OwlStatsSettings);
+    
         await model.importLayout({
             diagram,
             dataProvider,
             validateLinks: true,
             signal,
         });
-    }, [turtleData]);
+    }, [connectionSettings]);
 
     const [metadataProvider] = React.useState(() => new ExampleMetadataProvider());
     const [validationProvider] = React.useState(() => new ExampleValidationProvider());
@@ -68,7 +87,6 @@ function ClassicWorkspaceExample() {
                 toolbar={{
                     menu: (
                         <>
-                            <ToolbarActionOpenTurtleGraph onOpen={setTurtleData} />
                             <ExampleToolbarMenu />
                         </>
                     ),
@@ -85,22 +103,6 @@ class RenameSubclassOfProvider extends Reactodia.RenameLinkToLinkStateProvider {
             link.typeId === 'http://www.w3.org/2000/01/rdf-schema#subClassOf'
         );
     }
-}
-
-function ToolbarActionOpenTurtleGraph(props: {
-    onOpen: (turtleText: string) => void;
-}) {
-    const {onOpen} = props;
-    return (
-        <Reactodia.ToolbarActionOpen
-            fileAccept='.ttl'
-            onSelect={async file => {
-                const turtleText = await file.text();
-                onOpen(turtleText);
-            }}>
-            Load RDF (Turtle) data
-        </Reactodia.ToolbarActionOpen>
-    );
 }
 
 mountOnLoad(<ClassicWorkspaceExample />);

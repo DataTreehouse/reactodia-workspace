@@ -1,5 +1,5 @@
 import * as RdfJs from '@rdfjs/types';
-import { chainHash, dropHighestNonSignBit, hashString } from '@reactodia/hashmap';
+import { chainHash, dropHighestNonSignBit, hashString } from '../../hashmap';
 import * as N3 from 'n3';
 
 import { escapeRdfValue } from './rdfEscape';

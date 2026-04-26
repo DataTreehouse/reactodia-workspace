@@ -1,4 +1,4 @@
-import { chainHash, dropHighestNonSignBit, hashString } from '@reactodia/hashmap';
+import { chainHash, dropHighestNonSignBit, hashString } from '../hashmap';
 
 import { shallowArrayEqual } from '../coreUtils/collections';
 

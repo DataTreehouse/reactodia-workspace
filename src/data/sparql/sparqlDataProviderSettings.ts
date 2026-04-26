@@ -437,7 +437,11 @@ export const RdfSettings: SparqlDataProviderSettings = {
 
     fullTextSearch: {
         prefix: '',
-        queryPattern: '',
+        queryPattern: `?inst <https://github.com/DataTreehouse/maplib#fts> ?fts .
+        ?fts <https://github.com/DataTreehouse/maplib#ftsObject> ?label .
+        ?fts <https://github.com/DataTreehouse/maplib#ftsQuery> "\${text}" .
+        ?fts <https://github.com/DataTreehouse/maplib#ftsLimit> 200 .
+        ?fts <https://github.com/DataTreehouse/maplib#ftsScore> ?score .`,
     },
 
     classTreeQuery: '',
@@ -508,152 +512,6 @@ export const RdfSettings: SparqlDataProviderSettings = {
     filterElementInfoPattern: '',
 };
 
-const WikidataSettingsOverride: Partial<SparqlDataProviderSettings> = {
-    defaultPrefix:
-        `PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
- PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
- PREFIX wdt: <http://www.wikidata.org/prop/direct/>
- PREFIX wd: <http://www.wikidata.org/entity/>
- PREFIX owl:  <http://www.w3.org/2002/07/owl#>
-`,
-
-    schemaLabelProperty: 'rdfs:label',
-    dataLabelProperty: 'rdfs:label',
-
-    classTreeQuery: `
-        SELECT distinct ?class ?label ?parent WHERE {
-            ?class rdfs:label ?label.
-            \${labelLanguageFilter}
-            { ?class wdt:P279 wd:Q35120. }
-            UNION
-            { ?parent wdt:P279 wd:Q35120.
-            ?class wdt:P279 ?parent. }
-            UNION
-            { ?parent wdt:P279/wdt:P279 wd:Q35120.
-            ?class wdt:P279 ?parent. }
-        }
-    `,
-
-    linkTypesQuery: '',
-    linkTypesPattern: `
-        ?link wdt:P279* wd:Q18616576.
-        BIND(0 as ?instcount)
-    `,
-
-    linkTypesInfoQuery:
-`SELECT ?link ?label WHERE {
-    VALUES (?link) {\${ids}}
-    OPTIONAL {
-        ?claim <http://wikiba.se/ontology#directClaim> ?link .
-        ?claim \${schemaLabelProperty} ?label
-        \${labelLanguageFilter}
-    }
-}`,
-
-    propertyInfoQuery:
-`SELECT ?property ?label WHERE {
-    VALUES (?property) {\${ids}}
-    OPTIONAL {
-        ?claim <http://wikiba.se/ontology#directClaim> ?property .
-        ?claim \${schemaLabelProperty} ?label
-        \${labelLanguageFilter}
-    }
-}`,
-
-    elementInfoQuery: `
-        CONSTRUCT {
-            ?inst <urn:reactodia:sparql:type> ?class .
-            ?inst <urn:reactodia:sparql:label> ?label .
-            ?inst ?propType ?propValue.
-        } WHERE {
-            VALUES (?inst) {\${ids}}
-            OPTIONAL {
-                ?inst wdt:P31 ?class
-            }
-            OPTIONAL {
-                ?inst rdfs:label ?label
-                \${labelLanguageFilter}
-            }
-            OPTIONAL {
-                \${propertyConfigurations}
-                FILTER (isLiteral(?propValue))
-                \${valueLanguageFilter}
-            }
-        }
-    `,
-    imageQueryPattern: ` { ?inst ?linkType ?fullImage } union { ?inst wdt:P163/wdt:P18 ?fullImage }
-                BIND(CONCAT("https://commons.wikimedia.org/w/thumb.php?f=",
-                    STRAFTER(STR(?fullImage), "Special:FilePath/"), "&w=200") AS ?image)`,
-    linkTypesOfQuery: `
-        SELECT DISTINCT ?link ?direction
-        WHERE {
-            \${linkConfigurations}
-            ?claim <http://wikiba.se/ontology#directClaim> ?link .
-        }
-    `,
-    linkTypesStatisticsQuery: `
-        SELECT (\${linkId} as ?link) (COUNT(?outObject) AS ?outCount) (COUNT(?inObject) AS ?inCount)
-        WHERE {
-            {
-                {
-                    SELECT DISTINCT ?outObject WHERE {
-                        \${linkConfigurationOut}
-                        FILTER(ISIRI(?outObject))
-                        ?outObject ?someprop ?someobj.
-                    }
-                    LIMIT 101
-                }
-            } UNION {
-                {
-                    SELECT DISTINCT ?inObject WHERE {
-                        \${linkConfigurationIn}
-                        FILTER(ISIRI(?inObject))
-                        ?inObject ?someprop ?someobj.
-                    }
-                    LIMIT 101
-                }
-            }
-        }
-    `,
-    filterRefElementLinkPattern: '?claim <http://wikiba.se/ontology#directClaim> ?link .',
-    filterTypePattern: '?inst wdt:P31 ?instType. ?instType wdt:P279* ?class',
-    filterAdditionalRestriction: `FILTER ISIRI(?inst)
-                        BIND(STR(?inst) as ?strInst)
-                        FILTER exists {?inst ?someprop ?someobj}
-`,
-    filterElementInfoPattern: `
-        OPTIONAL {?inst wdt:P31 ?foundClass}
-        BIND (coalesce(?foundClass, owl:Thing) as ?class)
-        OPTIONAL {
-            ?inst rdfs:label ?label
-            \${labelLanguageFilter}
-        }
-    `,
-    fullTextSearch: {
-        prefix: 'PREFIX bds: <http://www.bigdata.com/rdf/search#>\n',
-        queryPattern: `
-            SERVICE wikibase:mwapi {
-                bd:serviceParam wikibase:endpoint "www.wikidata.org";
-                    wikibase:api "EntitySearch";
-                    mwapi:search "\${text}";
-                    mwapi:language "en".
-                ?inst wikibase:apiOutputItem mwapi:item.
-                ?num wikibase:apiOrdinal true.
-            }
-            BIND(IF(
-                STRLEN(STR(?inst)) > 33,
-                0-<http://www.w3.org/2001/XMLSchema#integer>(SUBSTR(STR(?inst), 33)),
-                -10000
-            ) as ?score)
-        `,
-    },
-};
-
-/**
- * @category Constants
- */
-export const WikidataSettings: SparqlDataProviderSettings = {...RdfSettings, ...WikidataSettingsOverride};
-
 const OwlRdfsSettingsOverride: Partial<SparqlDataProviderSettings> = {
     defaultPrefix:
         `PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -664,11 +522,17 @@ const OwlRdfsSettingsOverride: Partial<SparqlDataProviderSettings> = {
     dataLabelProperty: 'rdfs:label',
     fullTextSearch: {
         prefix: '',
-        queryPattern:
-        `?inst \${dataLabelProperty} ?search1
-        FILTER regex(COALESCE(str(?search1)), "\${text}", "i")
-        BIND(0 as ?score)
-`,
+        queryPattern:`
+        ?inst <https://github.com/DataTreehouse/maplib#fts> ?fts .
+        ?fts <https://github.com/DataTreehouse/maplib#ftsObject> ?label .
+        ?fts <https://github.com/DataTreehouse/maplib#ftsQuery> "\${text}" .
+        ?fts <https://github.com/DataTreehouse/maplib#ftsLimit> 200 .
+        ?fts <https://github.com/DataTreehouse/maplib#ftsScore> ?score .
+        `,
+//         `?inst \${dataLabelProperty} ?search1
+//         FILTER regex(COALESCE(str(?search1)), "\${text}", "i")
+//         BIND(0 as ?score)
+// `,
         extractLabel: true,
     },
     classTreeQuery: `
@@ -738,7 +602,15 @@ const OwlRdfsSettingsOverride: Partial<SparqlDataProviderSettings> = {
         }
     `,
     filterRefElementLinkPattern: '',
-    filterTypePattern: '?inst a ?instType. ?instType rdfs:subClassOf* ?class',
+    //Todo: remove this workaround
+    filterTypePattern: `?inst a ?instType.
+    {
+        ?instType rdfs:subClassOf+ ?class
+    }
+    UNION
+    {
+        VALUES (?instType) {(?class)}
+    }`,
     filterElementInfoPattern: `
         OPTIONAL {?inst rdf:type ?foundClass}
         BIND (coalesce(?foundClass, owl:Thing) as ?class)
@@ -782,57 +654,3 @@ const OWLStatsOverride: Partial<SparqlDataProviderSettings> = {
  * @category Constants
  */
 export const OwlStatsSettings: SparqlDataProviderSettings = {...OwlRdfsSettings, ...OWLStatsOverride};
-
-const DBPediaOverride: Partial<SparqlDataProviderSettings> = {
-    fullTextSearch: {
-        prefix: 'PREFIX dbo: <http://dbpedia.org/ontology/>\n',
-        queryPattern: `
-              ?inst rdfs:label ?searchLabel.
-              ?searchLabel bif:contains "\${text}".
-              ?inst dbo:wikiPageID ?origScore .
-              BIND(0-?origScore as ?score)
-        `,
-    },
-
-    classTreeQuery: `
-        SELECT distinct ?class ?label ?parent WHERE {
-            ?class rdfs:label ?label.
-            OPTIONAL {?class rdfs:subClassOf ?parent}
-            ?root rdfs:subClassOf owl:Thing.
-            ?class rdfs:subClassOf? | rdfs:subClassOf/rdfs:subClassOf ?root
-        }
-    `,
-
-    elementInfoQuery: `
-        CONSTRUCT {
-            ?inst <urn:reactodia:sparql:type> ?class .
-            ?inst <urn:reactodia:sparql:label> ?label .
-            ?inst ?propType ?propValue.
-        } WHERE {
-            VALUES (?inst) {\${ids}}
-            ?inst a ?class .
-            ?inst rdfs:label ?label .
-            FILTER (!contains(str(?class), 'http://dbpedia.org/class/yago'))
-            OPTIONAL {
-                \${propertyConfigurations}
-                FILTER (isLiteral(?propValue))
-            }
-        }
-    `,
-
-    filterTypePattern: '?inst a ?instType. ?instType rdfs:subClassOf* ?class',
-    filterElementInfoPattern: `
-        OPTIONAL {?inst rdf:type ?foundClass. FILTER (!contains(str(?foundClass), 'http://dbpedia.org/class/yago'))}
-        BIND (coalesce(?foundClass, owl:Thing) as ?class)
-        OPTIONAL {?inst \${dataLabelProperty} ?label}`,
-
-    imageQueryPattern: ` { ?inst ?linkType ?fullImage } UNION { [] ?linkType ?inst. BIND(?inst as ?fullImage) }
-            BIND(CONCAT("https://commons.wikimedia.org/w/thumb.php?f=",
-            STRAFTER(STR(?fullImage), "Special:FilePath/"), "&w=200") AS ?image)
-    `,
-};
-
-/**
- * @category Constants
- */
-export const DBPediaSettings: SparqlDataProviderSettings = {...OwlRdfsSettings, ...DBPediaOverride};

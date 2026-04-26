@@ -1,4 +1,4 @@
-import { HashMap, chainHash, hashString } from '@reactodia/hashmap';
+import { HashMap, chainHash, hashString } from '../hashmap';
 import * as React from 'react';
 import { hcl } from 'd3-color';
 
