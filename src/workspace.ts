@@ -59,6 +59,7 @@ export * as Rdf from './data/rdf/rdfModel';
 export * from './data/rdf/vocabulary';
 export * from './data/sparql/sparqlDataProvider';
 export * from './data/sparql/sparqlDataProviderSettings';
+export * from './data/httpapi/httpApiDataProvider';
 
 export {
     type CanvasApi, type CanvasMetrics, type CanvasPaneMetrics, type CanvasEvents,

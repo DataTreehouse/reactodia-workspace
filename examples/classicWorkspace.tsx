@@ -10,13 +10,7 @@ import {
     ExampleToolbarMenu,
     mountOnLoad,
     tryLoadLayoutFromLocalStorage,
-    getHashQuery,
-    setHashQueryParam
-    } from './resources/common';
-import {
-    SparqlConnectionSettings, SparqlConnectionAction, showConnectionDialog,
-} from './resources/sparqlConnection';
-
+} from './resources/common';
 const Layouts = Reactodia.defineLayoutWorker(() => new Worker(
     new URL('../src/layout.worker.ts', import.meta.url),
     {type: 'module'}
@@ -25,38 +19,22 @@ const Layouts = Reactodia.defineLayoutWorker(() => new Worker(
 function ClassicWorkspaceExample() {
     const {defaultLayout} = Reactodia.useWorker(Layouts);
 
-    const [connectionSettings, setConnectionSettings] = React.useState(
-        (): SparqlConnectionSettings | undefined => {
-            const params = getHashQuery();
-            const endpointUrl = "@ENDPOINT_URL@";
-            return endpointUrl ? {
-                endpointUrl,
-            } : undefined;
-        }
-    );
-    const applyConnectionSettings = (settings: SparqlConnectionSettings) => {
-        setHashQueryParam('sparql-endpoint', settings.endpointUrl);
-        setConnectionSettings(settings);
-    };
-
     const {onMount} = Reactodia.useLoadedWorkspace(async ({context, signal}) => {
         const {model, editor} = context;
         editor.setAuthoringMode(true);
 
         const diagram = tryLoadLayoutFromLocalStorage();
-        const dataProvider = new Reactodia.SparqlDataProvider({
-                endpointUrl: connectionSettings.endpointUrl,
-                imagePropertyUris: ['http://xmlns.com/foaf/0.1/img'],
-                queryMethod: 'POST',
-            }, Reactodia.OwlStatsSettings);
-    
+        const dataProvider = new Reactodia.HttpApiDataProvider({
+            baseUrl: '@BASE_URL@',
+        });
+
         await model.importLayout({
             diagram,
             dataProvider,
             validateLinks: true,
             signal,
         });
-    }, [connectionSettings]);
+    }, []);
 
     const [metadataProvider] = React.useState(() => new ExampleMetadataProvider());
     const [validationProvider] = React.useState(() => new ExampleValidationProvider());
