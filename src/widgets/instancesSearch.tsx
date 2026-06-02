@@ -2,11 +2,10 @@ import cx from 'clsx';
 import * as React from 'react';
 
 import { EventObserver } from '../coreUtils/events';
-import { Debouncer } from '../coreUtils/scheduler';
-import { useTranslation, type Translation, TranslatedText } from '../coreUtils/i18n';
+import { useTranslation, TranslatedText } from '../coreUtils/i18n';
 
 import { ElementModel, ElementIri, ElementTypeIri, LinkTypeIri } from '../data/model';
-import { DataProviderLookupParams, DataProviderLookupItem } from '../data/dataProvider';
+import { DataProviderLookupParams } from '../data/dataProvider';
 
 import type { CanvasApi } from '../diagram/canvasApi';
 import { placeElementsAroundTarget } from '../diagram/commands';
@@ -18,7 +17,7 @@ import {
 } from '../editor/dataDiagramModel';
 import { EntityElement, EntityGroup, iterateEntitiesOf } from '../editor/dataElements';
 
-import { WorkspaceContext, WorkspaceEventKey, useWorkspace } from '../workspace/workspaceContext';
+import { WorkspaceEventKey, useWorkspace } from '../workspace/workspaceContext';
 import { InstancesSearchTopic } from '../workspace/commandBusTopic';
 
 import { InlineEntity } from './utility/inlineEntity';
@@ -125,7 +124,7 @@ export interface SearchCriteria {
     readonly refElementLink?: LinkTypeIri;
     /**
      * Reference element link type direction ('in' | 'out').
-     * 
+     *
      * Only when {@link refElementLink} is set.
      */
     readonly linkDirection?: 'in' | 'out';
@@ -139,477 +138,187 @@ export interface SearchCriteria {
  */
 export function InstancesSearch(props: InstancesSearchProps) {
     const {
-        searchStore,
+        className,
+        searchStore: controlledSearchStore,
         searchTimeout = 'explicit',
         minSearchTermLength = 3,
+        onChangeCriteria,
+        onAddElements,
     } = props;
+
     const uncontrolledSearch = useSearchInputStore({
         initialValue: '',
         submitTimeout: searchTimeout,
         allowSubmit: term => term.length >= minSearchTermLength,
     });
-    const effectiveSearchStore = searchStore ?? uncontrolledSearch;
+    const searchStore = controlledSearchStore ?? uncontrolledSearch;
+    const isControlled = Boolean(controlledSearchStore);
+
     const workspace = useWorkspace();
+    const {model, view, triggerWorkspaceEvent} = workspace;
     const t = useTranslation();
-    return (
-        <InstancesSearchInner {...props}
-            isControlled={Boolean(searchStore)}
-            searchStore={effectiveSearchStore}
-            minSearchTermLength={minSearchTermLength}
-            workspace={workspace}
-            translation={t}
-        />
-    );
-}
 
-interface InstancesSearchInnerProps extends InstancesSearchProps {
-    isControlled: boolean;
-    searchStore: SearchInputStore;
-    minSearchTermLength: number;
-    workspace: WorkspaceContext;
-    translation: Translation;
-}
+    // Bundle criteria + limit so they change atomically; limit resets on every criteria change.
+    const [queryRequest, setQueryRequest] = React.useState<QueryRequest>({
+        criteria: {},
+        limit: ITEMS_PER_PAGE,
+    });
+    const criteria = queryRequest.criteria;
 
-interface State {
-    readonly criteria: SearchCriteria;
-    readonly querying?: boolean;
-    readonly resultId: number;
-    readonly error?: any;
-    readonly items?: ReadonlyArray<ElementModel>;
-    readonly selection: ReadonlySet<ElementIri>;
-    readonly moreItemsAvailable?: boolean;
-}
+    const [querying, setQuerying] = React.useState(false);
+    const [error, setError] = React.useState<unknown>();
+    const [items, setItems] = React.useState<ReadonlyArray<ElementModel>>();
+    const [resultId, setResultId] = React.useState(0);
+    const [moreItemsAvailable, setMoreItemsAvailable] = React.useState(false);
+    const [selection, setSelection] = React.useState<ReadonlySet<ElementIri>>(new Set());
 
-const CLASS_NAME = 'reactodia-instances-search';
+    // Trigger re-render when model entity labels change (used by criteria display).
+    const [, forceUpdate] = React.useReducer(n => n + 1, 0);
 
-const ITEMS_PER_PAGE = 100;
+    // Keep latest callback in a ref so effects never capture a stale version.
+    const onChangeCriteriaRef = React.useRef(onChangeCriteria);
+    React.useEffect(() => { onChangeCriteriaRef.current = onChangeCriteria; });
 
-class InstancesSearchInner extends React.Component<InstancesSearchInnerProps, State> {
-    private readonly listener = new EventObserver();
-    private readonly criteriaListener = new EventObserver();
-    private readonly searchListener = new EventObserver();
-    private readonly delayedUpdateAll = new Debouncer();
+    const applyAndNotifyCriteria = (newCriteria: SearchCriteria) => {
+        setQueryRequest({criteria: newCriteria, limit: ITEMS_PER_PAGE});
+        onChangeCriteriaRef.current?.(newCriteria);
+    };
 
-    private requestCancellation = new AbortController();
-    private currentRequest: DataProviderLookupParams | undefined;
-
-    constructor(props: InstancesSearchInnerProps) {
-        super(props);
-        this.state = {
-            criteria: {},
-            resultId: 0,
-            selection: new Set<ElementIri>(),
-        };
-    }
-
-    componentDidMount() {
-        const {workspace} = this.props;
-        const {model} = workspace;
-
-        this.listener.listen(model.events, 'changeLanguage', () => this.forceUpdate());
-        this.listener.listen(model.events, 'loadingStart', () => {
-            // Clear results when loading a new diagram
-            // (potentially with a different data provider)
-            this.setState(
-                {criteria: {}},
-                () => this.props.searchStore.change({value: '', action: 'clear'})
-            );
+    // Re-render on language change; reset on new diagram load.
+    React.useEffect(() => {
+        const listener = new EventObserver();
+        listener.listen(model.events, 'changeLanguage', forceUpdate);
+        listener.listen(model.events, 'loadingStart', () => {
+            setQueryRequest({criteria: {}, limit: ITEMS_PER_PAGE});
+            searchStore.change({value: '', action: 'clear'});
         });
+        return () => listener.stopListening();
+    }, [model, searchStore]);
 
+    // Advertise capabilities and handle external criteria changes via command bus.
+    React.useEffect(() => {
+        const listener = new EventObserver();
         const commands = workspace.getCommandBus(InstancesSearchTopic);
-        this.listener.listen(commands, 'findCapabilities', e => {
+        listener.listen(commands, 'findCapabilities', e => {
             e.capabilities.push({});
         });
-        this.listener.listen(commands, 'setCriteria', ({criteria}) => {
-            const {
-                searchStore, onChangeCriteria, workspace: {triggerWorkspaceEvent},
-            } = this.props;
+        listener.listen(commands, 'setCriteria', ({criteria: newCriteria}) => {
             triggerWorkspaceEvent(WorkspaceEventKey.searchUpdateCriteria);
-            this.setState(
-                {criteria},
-                () => {
-                    searchStore.change({
-                        value: criteria.text ?? '',
-                        action: 'clear',
-                    });
-                    onChangeCriteria?.(this.state.criteria);
-                }
+            setQueryRequest({criteria: newCriteria, limit: ITEMS_PER_PAGE});
+            searchStore.change({value: newCriteria.text ?? '', action: 'clear'});
+            onChangeCriteriaRef.current?.(newCriteria);
+        });
+        return () => listener.stopListening();
+    }, [workspace, searchStore, triggerWorkspaceEvent]);
+
+    // Update text criteria from search input; does NOT trigger onChangeCriteria.
+    React.useEffect(() => {
+        const listener = new EventObserver();
+        listener.listen(searchStore.events, 'executeSearch', ({value}) => {
+            const text = value === '' ? undefined : value;
+            setQueryRequest(prev =>
+                prev.criteria.text === text ? prev :
+                {criteria: {...prev.criteria, text}, limit: ITEMS_PER_PAGE}
             );
         });
-
-        this.listenSearch();
-        this.resubscribeToCriteria();
-        this.queryItems(false);
-    }
-
-    componentDidUpdate(prevProps: InstancesSearchInnerProps, prevState: State): void {
-        if (this.props.searchStore.events !== prevProps.searchStore.events) {
-            this.listenSearch();
-        }
-
-        if (this.state.criteria !== prevState.criteria) {
-            this.resubscribeToCriteria();
-            this.queryItems(false);
-        }
-    }
-
-    private listenSearch() {
-        const {searchStore} = this.props;
-        this.searchListener.stopListening();
-        this.searchListener.listen(searchStore.events, 'executeSearch', ({value}) => {
-            this.submitCriteriaUpdate(value, {triggerChange: false});
+        listener.listen(searchStore.events, 'clearSearch', () => {
+            setQueryRequest(prev =>
+                prev.criteria.text === undefined ? prev :
+                {criteria: {...prev.criteria, text: undefined}, limit: ITEMS_PER_PAGE}
+            );
         });
-        this.searchListener.listen(searchStore.events, 'clearSearch', () => {
-            this.submitCriteriaUpdate('', {triggerChange: false});
-        });
-    }
+        return () => listener.stopListening();
+    }, [searchStore]);
 
-    componentWillUnmount() {
-        this.listener.stopListening();
-        this.criteriaListener.stopListening();
-        this.searchListener.stopListening();
-        this.requestCancellation.abort();
-        this.currentRequest = undefined;
-    }
-
-    private resubscribeToCriteria() {
-        const {workspace: {model}} = this.props;
-        const {criteria} = this.state;
-        this.criteriaListener.stopListening();
-
+    // Re-render criteria display when related model entity labels change.
+    React.useEffect(() => {
+        const listener = new EventObserver();
         if (criteria.elementType) {
             const elementType = model.createElementType(criteria.elementType);
             if (elementType) {
-                this.criteriaListener.listen(elementType.events, 'changeData', this.scheduleUpdateAll);
+                listener.listen(elementType.events, 'changeData', forceUpdate);
             }
         }
-
         if (criteria.refElement) {
-            const element = model.elements.find((element): element is EntityElement =>
-                element instanceof EntityElement && element.iri === criteria.refElement
+            const element = model.elements.find(
+                (el): el is EntityElement =>
+                    el instanceof EntityElement && el.iri === criteria.refElement
             );
             if (element) {
-                this.criteriaListener.listen(element.events, 'changeData', this.scheduleUpdateAll);
+                listener.listen(element.events, 'changeData', forceUpdate);
             }
         }
-
         if (criteria.refElementLink) {
             const linkType = model.createLinkType(criteria.refElementLink);
             if (linkType) {
-                this.criteriaListener.listen(linkType.events, 'changeData', this.scheduleUpdateAll);
+                listener.listen(linkType.events, 'changeData', forceUpdate);
             }
         }
-    }
+        return () => listener.stopListening();
+    }, [criteria, model]);
 
-    private scheduleUpdateAll = () => {
-        this.delayedUpdateAll.call(this.updateAll);
-    };
-
-    private updateAll = () => this.forceUpdate();
-
-    render() {
-        const {
-            className, isControlled, searchStore, minSearchTermLength,
-            translation: t,
-        } = this.props;
-
-        const progressState: ProgressState = (
-            this.state.querying ? 'loading' :
-            this.state.error ? 'error':
-            this.state.items ? 'completed' :
-            'none'
-        );
-        
-        const resultItems = this.state.items ?? [];
-        const actionsAreHidden = this.state.querying || this.state.selection.size === 0;
-
-        return <div
-            className={cx(
-                CLASS_NAME,
-                isControlled ? `${CLASS_NAME}--controlled` : undefined,
-                className
-            )}>
-            <div className={`${CLASS_NAME}__criteria`}>
-                {this.renderCriteria()}
-                {isControlled ? null : (
-                    <SearchInput store={searchStore}
-                        className={`${CLASS_NAME}__text-criteria`}
-                        inputProps={{
-                            name: 'reactodia-instances-search-text',
-                            placeholder: t.textOptional('search_entities.input.placeholder'),
-                        }}
-                    />
-                )}
-            </div>
-            <ProgressBar state={progressState}
-                title={t.text('search_entities.query_progress.title')}
-            />
-            {/* specify resultId as key to reset scroll position when loaded new search results */}
-            <div key={this.state.resultId}
-                className={`${CLASS_NAME}__rest reactodia-scrollable`}
-                tabIndex={-1}>
-                <SearchResults
-                    items={resultItems}
-                    highlightText={this.state.criteria.text}
-                    selection={this.state.selection}
-                    onSelectionChanged={this.onSelectionChanged}
-                    footer={
-                        resultItems.length === 0 ? (
-                            <NoSearchResults hasQuery={this.state.items !== undefined}
-                                minSearchTermLength={minSearchTermLength}
-                            />
-                        ) : null
-                    }
-                />
-                <div className={`${CLASS_NAME}__rest-end`}>
-                    <button type='button'
-                        className={`${CLASS_NAME}__load-more reactodia-btn reactodia-btn-primary`}
-                        disabled={this.state.querying}
-                        style={{display: this.state.moreItemsAvailable ? undefined : 'none'}}
-                        title={t.text('search_entities.show_more_results.title')}
-                        onClick={() => this.queryItems(true)}>
-                        {t.text('search_entities.show_more_results.label')}
-                    </button>
-                </div>
-            </div>
-            <div
-                className={cx(
-                    `${CLASS_NAME}__actions`,
-                    actionsAreHidden ? `${CLASS_NAME}__actions-hidden` : undefined
-                )}
-                aria-hidden={actionsAreHidden ? 'true' : undefined}>
-                <button type='button'
-                    className={`${CLASS_NAME}__action reactodia-btn reactodia-btn-secondary`}
-                    disabled={this.state.querying || this.state.selection.size <= 1}
-                    title={t.text('search_entities.add_group.title')}
-                    onClick={() => this.placeSelectedItems('group')}>
-                    {t.text('search_entities.add_group.label')}
-                </button>
-                <button type='button'
-                    className={`${CLASS_NAME}__action reactodia-btn reactodia-btn-primary`}
-                    disabled={this.state.querying || this.state.selection.size === 0}
-                    title={t.text('search_entities.add_selected.title')}
-                    onClick={() => this.placeSelectedItems('separately')}>
-                    {t.text('search_entities.add_selected.label')}
-                </button>
-            </div>
-        </div>;
-    }
-
-    private onSelectionChanged = (newSelection: ReadonlySet<ElementIri>) => {
-        this.setState({selection: newSelection});
-    };
-
-    private renderCriteria(): React.ReactElement<any> {
-        const {workspace: {model}, translation: t} = this.props;
-        const {criteria} = this.state;
-        const criterions: React.ReactElement<any>[] = [];
-
-        if (criteria.elementType) {
-            const elementTypeInfo = model.getElementType(criteria.elementType);
-            const elementTypeLabel = t.formatLabel(
-                elementTypeInfo?.data?.label,
-                criteria.elementType,
-                model.language
-            );
-            criterions.push(
-                <div key='hasType' className={`${CLASS_NAME}__criterion`}>
-                    {this.renderRemoveCriterionButtons(() => this.setState(
-                        {
-                            criteria: {...criteria, elementType: undefined},
-                        },
-                        () => this.props.onChangeCriteria?.(this.state.criteria)
-                    ))}
-                    {t.template('search_entities.criteria_has_type', {
-                        entityType: (
-                            <span className={`${CLASS_NAME}__criterion-class`}
-                                title={criteria.elementType}>
-                                {elementTypeLabel}
-                            </span>
-                        )
-                    })}
-                </div>
-            );
-        } else if (criteria.refElement) {
-            const refElementData = findEntityData(model, criteria.refElement)
-                ?? EntityElement.placeholderData(criteria.refElement);
-
-            let linkTypeLabel: string | undefined;
-            if (criteria.refElementLink) {
-                const linkTypeData = model.getLinkType(criteria.refElementLink);
-                linkTypeLabel = t.formatLabel(
-                    linkTypeData?.data?.label,
-                    criteria.refElementLink,
-                    model.language
-                );
-            }
-
-            const entity = <InlineEntity target={refElementData} />;
-            const relationType = criteria.refElementLink ? (
-                <span className={`${CLASS_NAME}__criterion-link-type`}
-                    title={criteria.refElementLink}>
-                    {linkTypeLabel}
-                </span>
-            ) : undefined;
-            const sourceIcon = <span className={`${CLASS_NAME}__link-direction-in`} />;
-            const targetIcon = <span className={`${CLASS_NAME}__link-direction-out`} />;
-
-            criterions.push(
-                <div key='hasLinkedElement' className={`${CLASS_NAME}__criterion`}>
-                    {this.renderRemoveCriterionButtons(() => this.setState(
-                        {
-                            criteria: {...criteria, refElement: undefined, refElementLink: undefined},
-                        },
-                        () => this.props.onChangeCriteria?.(this.state.criteria)
-                    ))}
-                    {!criteria.refElementLink ? (
-                        t.template('search_entities.criteria_connected', {
-                            entity, relationType, sourceIcon, targetIcon,
-                        })
-                    ) : criteria.linkDirection === 'in' ? (
-                        t.template('search_entities.criteria_connected_to_source', {
-                            entity, relationType, sourceIcon, targetIcon,
-                        })
-                    ) : criteria.linkDirection == 'out' ? (
-                        t.template('search_entities.criteria_connected_to_target', {
-                            entity, relationType, sourceIcon, targetIcon,
-                        })
-                    ) : (
-                        t.template('search_entities.criteria_connected_via', {
-                            entity, relationType, sourceIcon, targetIcon,
-                        })
-                    )}
-                </div>
-            );
-        }
-
-        return <div className={`${CLASS_NAME}__criterions`}>{criterions}</div>;
-    }
-
-    private renderRemoveCriterionButtons(onClick: () => void) {
-        return <div className={`${CLASS_NAME}__criterion-remove reactodia-btn-group reactodia-btn-group-xs`}>
-            <button type='button' title='Remove criteria'
-                className={cx(
-                    `${CLASS_NAME}__criterion-remove-button`,
-                    'reactodia-btn reactodia-btn-default'
-                )}
-                onClick={onClick}>
-            </button>
-        </div>;
-    }
-
-    private submitCriteriaUpdate(term: string, options: { triggerChange: boolean }): void {
-        const {onChangeCriteria} = this.props;
-        this.setState(
-            (state) => {
-                const text = term === '' ? undefined : term;
-                return state.criteria.text === text ? null : {
-                    criteria: {...state.criteria, text},
-                };
-            },
-            options.triggerChange
-                ? () => onChangeCriteria?.(this.state.criteria)
-                : undefined
-        );
-    }
-
-    private queryItems(loadMoreItems: boolean) {
-        const {workspace: {model, triggerWorkspaceEvent}} = this.props;
-
-        this.requestCancellation.abort();
-
-        let request: DataProviderLookupParams;
-        if (loadMoreItems) {
-            if (!this.currentRequest) {
-                throw new Error('Cannot request more items without initial request.');
-            }
-            const {limit} = this.currentRequest;
-            request = {
-                ...this.currentRequest,
-                limit: typeof limit === 'number' ? (limit + ITEMS_PER_PAGE) : limit,
-            };
-        } else {
-            request = createRequest(this.state.criteria);
-        }
-
-        if (!(request.text || request.elementTypeId || request.refElementId || request.refElementLinkId)) {
-            this.setState({
-                querying: false,
-                error: undefined,
-                items: undefined,
-                selection: new Set<ElementIri>(),
-                moreItemsAvailable: false,
-            });
+    // Execute data provider query; aborts the previous request when queryRequest changes.
+    React.useEffect(() => {
+        const {criteria, limit} = queryRequest;
+        if (!(criteria.text || criteria.elementType || criteria.refElement || criteria.refElementLink)) {
+            setQuerying(false);
+            setError(undefined);
+            setItems(undefined);
+            setSelection(new Set());
+            setMoreItemsAvailable(false);
             return;
         }
 
-        this.requestCancellation = new AbortController();
-        const signal = this.requestCancellation.signal;
-        request = {...request, signal};
+        const isLoadMore = limit > ITEMS_PER_PAGE;
+        const abortController = new AbortController();
+        const request: DataProviderLookupParams = {
+            ...createRequest(criteria),
+            limit,
+            signal: abortController.signal,
+        };
 
-        this.currentRequest = request;
-        this.setState({
-            querying: true,
-            error: undefined,
-            moreItemsAvailable: false,
-        });
+        setQuerying(true);
+        setError(undefined);
+        setMoreItemsAvailable(false);
 
         model.dataProvider.lookup(request).then(elements => {
-            if (signal.aborted) { return; }
-            this.processFilterData(elements);
-            triggerWorkspaceEvent(WorkspaceEventKey.searchQueryItem);
-        }).catch(error => {
-            if (signal.aborted) { return; }
-            console.error(error);
-            this.setState({querying: false, error: error as unknown});
-        });
-    }
-
-    private processFilterData(elements: readonly DataProviderLookupItem[]) {
-        const requestedAdditionalItems =
-            typeof this.currentRequest!.limit === 'number' &&
-            this.currentRequest!.limit > ITEMS_PER_PAGE;
-
-        const existingIris = new Set<ElementIri>();
-
-        if (requestedAdditionalItems) {
-            for (const item of this.state.items!) {
-                existingIris.add(item.id);
+            if (abortController.signal.aborted) { return; }
+            const moreAvailable =
+                typeof limit === 'number' && elements.length >= limit;
+            if (isLoadMore) {
+                setItems(prev => {
+                    const existingIds = new Set((prev ?? []).map(i => i.id));
+                    const next = [...(prev ?? [])];
+                    for (const {element} of elements) {
+                        if (!existingIds.has(element.id)) { next.push(element); }
+                    }
+                    return next;
+                });
+            } else {
+                setItems(elements.map(({element}) => element));
+                setResultId(id => id + 1);
+                setSelection(new Set());
             }
-        }
+            setQuerying(false);
+            setMoreItemsAvailable(moreAvailable);
+            triggerWorkspaceEvent(WorkspaceEventKey.searchQueryItem);
+        }).catch(err => {
+            if (abortController.signal.aborted) { return; }
+            console.error(err);
+            setQuerying(false);
+            setError(err as unknown);
+        });
 
-        const items = requestedAdditionalItems ? [...this.state.items!] : [];
-        for (const {element} of elements) {
-            if (existingIris.has(element.id)) { continue; }
-            items.push(element);
-        }
+        return () => abortController.abort();
+    }, [queryRequest, model, triggerWorkspaceEvent]);
 
-        const moreItemsAvailable =
-            typeof this.currentRequest!.limit === 'number' &&
-            elements.length >= this.currentRequest!.limit;
+    const handleLoadMore = () => {
+        setQueryRequest(prev => ({...prev, limit: prev.limit + ITEMS_PER_PAGE}));
+    };
 
-        if (requestedAdditionalItems) {
-            this.setState({querying: false, items, error: undefined, moreItemsAvailable});
-        } else {
-            this.setState({
-                querying: false,
-                resultId: this.state.resultId + 1,
-                items,
-                selection: new Set<ElementIri>(),
-                error: undefined,
-                moreItemsAvailable,
-            });
-        }
-    }
-
-    private placeSelectedItems(mode: 'separately' | 'group'): void {
-        const {onAddElements, workspace: {model, view}} = this.props;
+    const placeSelectedItems = (mode: 'separately' | 'group') => {
         const canvas = view.findAnyCanvas();
-        const {items, selection} = this.state;
-
-        if (!canvas || selection.size === 0) {
-            return;
-        }
+        if (!canvas || selection.size === 0) { return; }
 
         const batch = model.history.startBatch(
             TranslatedText.text('search_entities.place_elements.command')
@@ -623,10 +332,8 @@ class InstancesSearchInner extends React.Component<InstancesSearchInnerProps, St
             const target = new VoidElement({
                 position: getViewportPlacementPosition(canvas, 0.3, 0.5),
             });
-
             elements = selectedEntities.map(entity => model.createElement(entity));
             canvas.renderingState.syncUpdate();
-
             batch.history.execute(placeElementsAroundTarget({
                 target,
                 elements,
@@ -639,26 +346,215 @@ class InstancesSearchInner extends React.Component<InstancesSearchInnerProps, St
                 items: selectedEntities.map(data => ({data})),
                 position: getViewportPlacementPosition(canvas, 0.5, 0.5),
             });
-
             elements = [group];
             model.addElement(group);
             canvas.renderingState.syncUpdate();
-
             const {x, y, width, height} = boundsOf(group, canvas.renderingState);
-            group.setPosition({
-                x: x - width / 2,
-                y: y - height / 2,
-            });
+            group.setPosition({x: x - width / 2, y: y - height / 2});
         }
 
         const addedElements = Array.from(selection);
         batch.history.execute(requestElementData(model, addedElements));
         batch.history.execute(restoreLinksBetweenElements(model, {addedElements}));
-
         batch.store();
 
         onAddElements?.(elements);
+    };
+
+    const progressState: ProgressState = (
+        querying ? 'loading' :
+        error ? 'error' :
+        items ? 'completed' :
+        'none'
+    );
+
+    const resultItems = items ?? [];
+    const actionsAreHidden = querying || selection.size === 0;
+
+    return (
+        <div className={cx(
+            CLASS_NAME,
+            isControlled ? `${CLASS_NAME}--controlled` : undefined,
+            className
+        )}>
+            <div className={`${CLASS_NAME}__criteria`}>
+                <CriteriaDisplay
+                    criteria={criteria}
+                    onRemoveElementType={() => applyAndNotifyCriteria(
+                        {...criteria, elementType: undefined}
+                    )}
+                    onRemoveRefElement={() => applyAndNotifyCriteria(
+                        {...criteria, refElement: undefined, refElementLink: undefined}
+                    )}
+                />
+                {isControlled ? null : (
+                    <SearchInput store={searchStore}
+                        className={`${CLASS_NAME}__text-criteria`}
+                        inputProps={{
+                            name: 'reactodia-instances-search-text',
+                            placeholder: t.textOptional('search_entities.input.placeholder'),
+                        }}
+                    />
+                )}
+            </div>
+            <ProgressBar state={progressState}
+                title={t.text('search_entities.query_progress.title')}
+            />
+            {/* key resets scroll position when new search results are loaded */}
+            <div key={resultId}
+                className={`${CLASS_NAME}__rest reactodia-scrollable`}
+                tabIndex={-1}>
+                <SearchResults
+                    items={resultItems}
+                    highlightText={criteria.text}
+                    selection={selection}
+                    onSelectionChanged={setSelection}
+                    footer={
+                        resultItems.length === 0 ? (
+                            <NoSearchResults hasQuery={items !== undefined}
+                                minSearchTermLength={minSearchTermLength}
+                            />
+                        ) : null
+                    }
+                />
+                <div className={`${CLASS_NAME}__rest-end`}>
+                    <button type='button'
+                        className={`${CLASS_NAME}__load-more reactodia-btn reactodia-btn-primary`}
+                        disabled={querying}
+                        style={{display: moreItemsAvailable ? undefined : 'none'}}
+                        title={t.text('search_entities.show_more_results.title')}
+                        onClick={handleLoadMore}>
+                        {t.text('search_entities.show_more_results.label')}
+                    </button>
+                </div>
+            </div>
+            <div
+                className={cx(
+                    `${CLASS_NAME}__actions`,
+                    actionsAreHidden ? `${CLASS_NAME}__actions-hidden` : undefined
+                )}
+                aria-hidden={actionsAreHidden ? 'true' : undefined}>
+                <button type='button'
+                    className={`${CLASS_NAME}__action reactodia-btn reactodia-btn-secondary`}
+                    disabled={querying || selection.size <= 1}
+                    title={t.text('search_entities.add_group.title')}
+                    onClick={() => placeSelectedItems('group')}>
+                    {t.text('search_entities.add_group.label')}
+                </button>
+                <button type='button'
+                    className={`${CLASS_NAME}__action reactodia-btn reactodia-btn-primary`}
+                    disabled={querying || selection.size === 0}
+                    title={t.text('search_entities.add_selected.title')}
+                    onClick={() => placeSelectedItems('separately')}>
+                    {t.text('search_entities.add_selected.label')}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+interface QueryRequest {
+    readonly criteria: SearchCriteria;
+    readonly limit: number;
+}
+
+const CLASS_NAME = 'reactodia-instances-search';
+const ITEMS_PER_PAGE = 100;
+
+function CriteriaDisplay(props: {
+    criteria: SearchCriteria;
+    onRemoveElementType: () => void;
+    onRemoveRefElement: () => void;
+}) {
+    const {criteria, onRemoveElementType, onRemoveRefElement} = props;
+    const {model} = useWorkspace();
+    const t = useTranslation();
+
+    const criterions: React.ReactElement[] = [];
+
+    if (criteria.elementType) {
+        const elementTypeInfo = model.getElementType(criteria.elementType);
+        const elementTypeLabel = t.formatLabel(
+            elementTypeInfo?.data?.label,
+            criteria.elementType,
+            model.language
+        );
+        criterions.push(
+            <div key='hasType' className={`${CLASS_NAME}__criterion`}>
+                <RemoveCriterionButton onClick={onRemoveElementType} />
+                {t.template('search_entities.criteria_has_type', {
+                    entityType: (
+                        <span className={`${CLASS_NAME}__criterion-class`}
+                            title={criteria.elementType}>
+                            {elementTypeLabel}
+                        </span>
+                    )
+                })}
+            </div>
+        );
+    } else if (criteria.refElement) {
+        const refElementData = findEntityData(model, criteria.refElement)
+            ?? EntityElement.placeholderData(criteria.refElement);
+
+        let linkTypeLabel: string | undefined;
+        if (criteria.refElementLink) {
+            const linkTypeData = model.getLinkType(criteria.refElementLink);
+            linkTypeLabel = t.formatLabel(
+                linkTypeData?.data?.label,
+                criteria.refElementLink,
+                model.language
+            );
+        }
+
+        const entity = <InlineEntity target={refElementData} />;
+        const relationType = criteria.refElementLink ? (
+            <span className={`${CLASS_NAME}__criterion-link-type`}
+                title={criteria.refElementLink}>
+                {linkTypeLabel}
+            </span>
+        ) : undefined;
+        const sourceIcon = <span className={`${CLASS_NAME}__link-direction-in`} />;
+        const targetIcon = <span className={`${CLASS_NAME}__link-direction-out`} />;
+
+        criterions.push(
+            <div key='hasLinkedElement' className={`${CLASS_NAME}__criterion`}>
+                <RemoveCriterionButton onClick={onRemoveRefElement} />
+                {!criteria.refElementLink ? (
+                    t.template('search_entities.criteria_connected', {
+                        entity, relationType, sourceIcon, targetIcon,
+                    })
+                ) : criteria.linkDirection === 'in' ? (
+                    t.template('search_entities.criteria_connected_to_source', {
+                        entity, relationType, sourceIcon, targetIcon,
+                    })
+                ) : criteria.linkDirection === 'out' ? (
+                    t.template('search_entities.criteria_connected_to_target', {
+                        entity, relationType, sourceIcon, targetIcon,
+                    })
+                ) : (
+                    t.template('search_entities.criteria_connected_via', {
+                        entity, relationType, sourceIcon, targetIcon,
+                    })
+                )}
+            </div>
+        );
     }
+
+    return <div className={`${CLASS_NAME}__criterions`}>{criterions}</div>;
+}
+
+function RemoveCriterionButton(props: {onClick: () => void}) {
+    return (
+        <div className={`${CLASS_NAME}__criterion-remove reactodia-btn-group reactodia-btn-group-xs`}>
+            <button type='button' title='Remove criteria'
+                className={cx(
+                    `${CLASS_NAME}__criterion-remove-button`,
+                    'reactodia-btn reactodia-btn-default'
+                )}
+                onClick={props.onClick}>
+            </button>
+        </div>
+    );
 }
 
 function findEntityData(graph: DataGraphStructure, iri: ElementIri): ElementModel | undefined {
