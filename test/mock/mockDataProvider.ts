@@ -1,4 +1,4 @@
-import { HashSet } from '@reactodia/hashmap';
+import { HashSet } from '../../src/hashmap';
 
 import { EmptyDataProvider } from '../../src/data/decorated/emptyDataProvider';
 import {

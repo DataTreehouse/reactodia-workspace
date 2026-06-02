@@ -1,10 +1,8 @@
-/// <reference types="vitest/config" /> 
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { type UserConfig, defineConfig } from 'vite';
 import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js';
-import { playwright } from '@vitest/browser-playwright';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -20,7 +18,7 @@ const EXAMPLES = [
 //     'wikidata'
 ];
 
-export default defineConfig(({ command, mode }) => {
+export default defineConfig(({ command }) => {
     const common = {
         mode: 'development',
         build: {
@@ -55,38 +53,7 @@ export default defineConfig(({ command, mode }) => {
         },
     } satisfies UserConfig;
 
-    if (mode === 'test') {
-        // Config to run unit tests with Vitest
-        return {
-            ...common,
-            build: {
-                ...common.build,
-                rollupOptions: undefined,
-                assetsInlineLimit: (path, _content) => (
-                    /.resource.svg$/.test(path) ? false :
-                    /.inline.svg$/.test(path) ? true :
-                    undefined
-                ),
-            },
-            test: {
-                browser: {
-                    provider: playwright(),
-                    enabled: true,
-                    screenshotFailures: false,
-                    instances: [
-                        {browser: 'chromium'},
-                    ],
-                },
-            },
-            // To avoid warning about reloading due to
-            // "new dependencies optimized: react/jsx-dev-runtime":
-            optimizeDeps: {
-                include: [
-                    'react/jsx-dev-runtime',
-                ]
-            },
-        };
-    } else if (process.env.BUILD_EXAMPLES) {
+    if (process.env.BUILD_EXAMPLES) {
         // Config to build static assets from examples
         return {
             ...common,

@@ -1,4 +1,4 @@
-import { HashSet } from '@reactodia/hashmap';
+import { HashSet } from '../../src/hashmap';
 import { describe, expect, it } from 'vitest';
 
 import {

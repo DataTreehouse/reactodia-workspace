@@ -12,7 +12,7 @@ import {
 } from '../../src/data/sparql/sparqlDataProviderSettings';
 import { SparqlResponse } from '../../src/data/sparql/sparqlModels';
 
-import TURTLE_DATA from '../../examples/resources/orgOntology.ttl?raw';
+import TURTLE_DATA from '../../other_examples/resources/orgOntology.ttl?raw';
 
 const NAMESPACE_ORG = 'http://www.w3.org/ns/org#';
 export const org = {
