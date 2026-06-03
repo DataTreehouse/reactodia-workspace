@@ -1,3 +1,5 @@
+@use "../mixin/icons";
+
 .reactodia-search-results {
   &__root {
     margin: 0;
@@ -7,5 +9,22 @@
   &__item {
     display: contents;
     list-style: none;
+  }
+
+  &__item > ul {
+    margin: 0;
+    padding: 0 0 0 12px;
+  }
+
+  &__type-group-header {
+    display: block;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+    padding: 2px 4px;
+    background: none;
+    border: none;
+    font: inherit;
+    margin-bottom: 2px;
   }
 }

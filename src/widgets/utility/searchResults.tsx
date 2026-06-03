@@ -3,18 +3,41 @@ import * as React from 'react';
 import {
     neverSyncStore, useEventStore, useFrameDebouncedStore, useSyncStore,
 } from '../../coreUtils/hooks';
+import { useTranslation } from '../../coreUtils/i18n';
 
-import { ElementModel, ElementIri } from '../../data/model';
+import { ElementModel, ElementIri, ElementTypeIri } from '../../data/model';
 import { getAllPresentEntities } from '../../editor/dataDiagramModel';
 import { useWorkspace } from '../../workspace/workspaceContext';
 
 import { ListElementView, startDragElements } from './listElementView';
 import {
-    TreeList, TreeListState, type TreeListModel, type TreeListRenderItem, type TreeListFocusProps,
-    type TreeListUpPath,
+    TreeList, TreeListState, type TreeListModel, type TreeListRenderItem,
+    type TreeListFocusProps, type TreeListUpPath, type TreeListDownPath,
 } from './treeList';
 
 const CLASS_NAME = 'reactodia-search-results';
+
+interface SearchResultsContext {
+    readonly highlightText: string | undefined;
+    readonly useDragAndDrop: boolean;
+    readonly selection: ReadonlySet<ElementIri>;
+    readonly onToggleGroup: (typeIri: ElementTypeIri) => void;
+    readonly onSetSelected: (
+        item: ElementModel,
+        select: boolean,
+        e: React.MouseEvent | React.KeyboardEvent
+    ) => void;
+}
+
+const SearchResultsContext = React.createContext<SearchResultsContext | null>(null);
+
+function useSearchResultsContext(): SearchResultsContext {
+    const context = React.useContext(SearchResultsContext);
+    if (!context) {
+        throw new Error('Reactodia: missing search results context');
+    }
+    return context;
+}
 
 /**
  * Props for {@link SearchResults} component.
@@ -52,7 +75,7 @@ export interface SearchResultsProps {
     useDragAndDrop?: boolean;
     /**
      * Whether to allow to select multiple items at the same time.
-     * 
+     *
      * It is possible to select a range of items by holding `Shift` when
      * selecting another item to select all other items in-between as well.
      *
@@ -66,7 +89,8 @@ export interface SearchResultsProps {
 }
 
 /**
- * Utility component to display a list of selectable entities.
+ * Utility component to display a list of selectable entities, grouped by type.
+ * Items with no type are shown as top-level nodes.
  *
  * @category Components
  */
@@ -76,12 +100,6 @@ export function SearchResults(props: SearchResultsProps) {
         useDragAndDrop = true, multiSelection = true, footer,
     } = props;
 
-    const renderItem = React.useCallback<TreeListRenderItem<ElementItem, boolean>>(
-        ({item, path, focusProps, selected}) => (
-            <ResultItem item={item} path={path} focusProps={focusProps} selected={selected} />
-        ),
-        []
-    );
     const rootProps = React.useMemo((): React.HTMLProps<HTMLUListElement> => ({
         className: `${CLASS_NAME}__root`,
         role: 'list',
@@ -94,7 +112,8 @@ export function SearchResults(props: SearchResultsProps) {
     }), []);
 
     const computeIsItemDisabled = useIsItemDisabledWithDefault(isItemDisabled);
-    const extendedItems = React.useMemo(() => items.map((data): ElementItem => ({
+    const extendedItems = React.useMemo(() => items.map((data): LeafItem => ({
+        kind: 'leaf',
         data,
         active: !computeIsItemDisabled(data),
     })), [items, computeIsItemDisabled]);
@@ -105,19 +124,71 @@ export function SearchResults(props: SearchResultsProps) {
     });
     const lastSelected = React.useRef<ElementModel>();
 
+    const [expandedGroups, setExpandedGroups] = React.useState<ReadonlySet<string>>(new Set());
+
+    const toggleGroup = React.useCallback((typeIri: ElementTypeIri) => {
+        const key = `__type__:${typeIri}`;
+        setExpandedGroups(prev => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key); else next.add(key);
+            return next;
+        });
+    }, []);
+
+    const handleSetExpanded = React.useCallback(
+        (item: SearchResultItem, _path: TreeListDownPath, expand: boolean) => {
+            if (item.kind !== 'group') { return; }
+            const key = `__type__:${item.typeIri}`;
+            setExpandedGroups(prev => {
+                const next = new Set(prev);
+                if (expand) { next.add(key); } else { next.delete(key); }
+                return next;
+            });
+        },
+        []
+    );
+
+    const expandedState = React.useMemo(() => {
+        if (expandedGroups.size === 0) { return undefined; }
+        return new TreeListState<boolean>(
+            new Map(Array.from(expandedGroups, key => [key, {value: true}]))
+        );
+    }, [expandedGroups]);
+
+    const topLevelItems = React.useMemo((): readonly SearchResultItem[] => {
+        const groupMap = new Map<ElementTypeIri, LeafItem[]>();
+        const untyped: LeafItem[] = [];
+        for (const item of extendedItems) {
+            const typeIri = item.data.types[0] as ElementTypeIri | undefined;
+            if (typeIri) {
+                if (!groupMap.has(typeIri)) { groupMap.set(typeIri, []); }
+                groupMap.get(typeIri)!.push(item);
+            } else {
+                untyped.push(item);
+            }
+        }
+        const groups: TypeGroupItem[] = Array.from(groupMap, ([typeIri, groupItems]) => ({
+            kind: 'group' as const,
+            typeIri,
+            items: groupItems,
+        }));
+        return [...untyped, ...groups];
+    }, [extendedItems]);
+
     const searchResultsContext = React.useMemo(
         (): SearchResultsContext => ({
             highlightText,
             useDragAndDrop,
             selection,
+            onToggleGroup: toggleGroup,
             onSetSelected: (item, select, e) => {
                 if (select) {
-                    if (multiSelection && e.shiftKey && lastSelected.current) {
-                        const lastIri = lastSelected.current.id;
+                    const prevSelected = lastSelected.current;
+                    if (multiSelection && e.shiftKey && prevSelected) {
                         const lastIndex = latestItems.current
-                            .findIndex(entity => entity.id === lastIri);
+                            .findIndex(entity => entity.id === prevSelected.id);
                         const currentIndex = latestItems.current
-                            .findIndex(entity => entity.id === item.data.id);
+                            .findIndex(entity => entity.id === item.id);
                         if (lastIndex >= 0 && currentIndex >= 0) {
                             const nextSelection = new Set(selection);
                             const endIndex = Math.max(lastIndex, currentIndex);
@@ -126,38 +197,35 @@ export function SearchResults(props: SearchResultsProps) {
                             }
                             onSelectionChanged(nextSelection);
                         }
-                    } else if (!selection.has(item.data.id)) {
+                    } else if (!selection.has(item.id)) {
                         const nextSelection = new Set(multiSelection ? selection : undefined);
-                        nextSelection.add(item.data.id);
+                        nextSelection.add(item.id);
                         onSelectionChanged(nextSelection);
                     }
-                    lastSelected.current = item.data;
+                    lastSelected.current = item;
                 } else {
-                    if (selection.has(item.data.id)) {
+                    if (selection.has(item.id)) {
                         const nextSelection = new Set(selection);
-                        nextSelection.delete(item.data.id);
+                        nextSelection.delete(item.id);
                         onSelectionChanged(nextSelection);
                     }
                 }
-            }
+            },
         }),
-        [
-            highlightText,
-            useDragAndDrop,
-            selection,
-            onSelectionChanged,
-            multiSelection,
-        ]
+        [highlightText, useDragAndDrop, selection, onSelectionChanged, multiSelection, toggleGroup]
     );
 
-    const selected = React.useMemo((): TreeListState<boolean> | undefined => {
-        if (selection.size === 0) {
-            return undefined;
-        }
-        return new TreeListState<boolean>(
-            new Map(Array.from(selection, iri => [iri, {value: true}]))
-        );
-    }, [selection]);
+    const renderItem = React.useCallback<TreeListRenderItem<SearchResultItem, boolean>>(
+        ({item, path, focusProps, expanded, selected}) => {
+            if (item.kind === 'group') {
+                return (
+                    <TypeGroupHeader item={item} focusProps={focusProps} expanded={expanded} />
+                );
+            }
+            return <ResultItem item={item} path={path} focusProps={focusProps} selected={selected} />;
+        },
+        []
+    );
 
     React.useEffect(() => {
         const leftovers = new Set(selection);
@@ -178,9 +246,10 @@ export function SearchResults(props: SearchResultsProps) {
             <div className={CLASS_NAME}>
                 <TreeList
                     model={SearchResultsModel}
-                    items={extendedItems}
+                    items={topLevelItems}
                     renderItem={renderItem}
-                    selected={selected}
+                    expanded={expandedState}
+                    onSetExpanded={handleSetExpanded}
                     rootProps={rootProps}
                     forestProps={forestProps}
                     itemProps={itemProps}
@@ -211,60 +280,72 @@ function useIsItemDisabledWithDefault(
     }, [isItemDisabled, cellsVersion]);
 }
 
-interface ElementItem {
+interface LeafItem {
+    readonly kind: 'leaf';
     readonly data: ElementModel;
     readonly active: boolean;
 }
 
-const SearchResultsModel: TreeListModel<ElementItem, boolean> = {
-    getKey: item => item.data.id,
-    getChildren: item => undefined,
-    getDefaultSelected: (item, selected) => undefined,
-    isActive: item => item.active,
-};
-
-interface SearchResultsContext {
-    readonly highlightText: string | undefined;
-    readonly useDragAndDrop: boolean;
-    readonly selection: ReadonlySet<ElementIri>;
-    readonly onSetSelected: (
-        item: ElementItem,
-        select: boolean,
-        e: React.MouseEvent | React.KeyboardEvent
-    ) => void;
+interface TypeGroupItem {
+    readonly kind: 'group';
+    readonly typeIri: ElementTypeIri;
+    readonly items: readonly LeafItem[];
 }
 
-const SearchResultsContext = React.createContext<SearchResultsContext | null>(null);
+type SearchResultItem = LeafItem | TypeGroupItem;
 
-function useSearchResultsContext(): SearchResultsContext {
-    const context = React.useContext(SearchResultsContext);
-    if (!context) {
-        throw new Error('Reactodia: missing search results context');
-    }
-    return context;
+const SearchResultsModel: TreeListModel<SearchResultItem, boolean> = {
+    getKey: item => item.kind === 'group' ? `__type__:${item.typeIri}` : item.data.id,
+    getChildren: item => item.kind === 'group' ? item.items : undefined,
+    getDefaultSelected: () => undefined,
+    isActive: item => item.kind === 'group' ? true : item.active,
+};
+
+function TypeGroupHeader(props: {
+    item: TypeGroupItem;
+    focusProps: TreeListFocusProps;
+    expanded: boolean;
+}) {
+    const {item, focusProps, expanded} = props;
+    const {model} = useWorkspace();
+    const t = useTranslation();
+    const {onToggleGroup} = useSearchResultsContext();
+
+    const label = t.formatLabel(
+        model.getElementType(item.typeIri)?.data?.label,
+        item.typeIri,
+        model.language
+    );
+
+    return (
+        <button type='button' {...focusProps}
+            className={`${CLASS_NAME}__type-group-header`}
+            onClick={() => onToggleGroup(item.typeIri)}>
+            {expanded ? '▼' : '▶'} {label} ({item.items.length})
+        </button>
+    );
 }
 
 function ResultItem(props: {
-    item: ElementItem;
+    item: LeafItem;
     path: TreeListUpPath;
     focusProps: TreeListFocusProps;
     selected: boolean | undefined;
 }) {
-    const {item, focusProps, selected} = props;
-    const {
-        highlightText, useDragAndDrop, selection, onSetSelected,
-    } = useSearchResultsContext();
+    const {item, focusProps} = props;
+    const {highlightText, useDragAndDrop, selection, onSetSelected} = useSearchResultsContext();
+    const isSelected = selection.has(item.data.id);
     return (
         <ListElementView {...(item.active ? focusProps : undefined)}
             element={item.data}
             highlightText={highlightText}
             disabled={!item.active}
-            selected={Boolean(selected)}
-            onClick={item.active ? e => onSetSelected(item, !selected, e) : undefined}
+            selected={isSelected}
+            onClick={item.active ? e => onSetSelected(item.data, !isSelected, e) : undefined}
             onKeyDown={e => {
                 if (item.active && e.key === ' ') {
                     e.preventDefault();
-                    onSetSelected(item, !selected, e);
+                    onSetSelected(item.data, !isSelected, e);
                 }
             }}
             onDragStart={useDragAndDrop ? e => {
