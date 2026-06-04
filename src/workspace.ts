@@ -258,6 +258,7 @@ export {
     LinkActionDelete, type LinkActionDeleteProps,
     LinkActionMoveEndpoint, type LinkActionMoveEndpointProps,
     LinkActionRename, type LinkActionRenameProps,
+    LinkActionCopyIri, type LinkActionCopyIriProps,
 } from './widgets/linkAction';
 export { LinkTypesToolbox, type LinkTypesToolboxProps } from './widgets/linksToolbox';
 export { Navigator, type NavigatorProps } from './widgets/navigator';
@@ -275,6 +276,7 @@ export {
     SelectionActionGroup, type SelectionActionGroupProps,
     SelectionActionEstablishLink, type SelectionActionEstablishLinkProps,
     SelectionActionAnnotate, type SelectionActionAnnotateProps,
+    SelectionActionCopyIri, type SelectionActionCopyIriProps,
 } from './widgets/selectionAction';
 export { Toolbar,type  ToolbarProps } from './widgets/toolbar';
 export {

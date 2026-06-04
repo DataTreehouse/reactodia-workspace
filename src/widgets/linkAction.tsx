@@ -543,6 +543,38 @@ function LinkEndpointHandle(props: {
 }
 
 /**
+ * Props for {@link LinkActionCopyIri} component.
+ *
+ * @see {@link LinkActionCopyIri}
+ */
+export interface LinkActionCopyIriProps extends LinkActionStyleProps {}
+
+/**
+ * Link action component to copy the predicate IRI of the selected relation to the clipboard.
+ *
+ * This action is visible only when the selected link is a {@link RelationLink}.
+ *
+ * @category Components
+ */
+export function LinkActionCopyIri(props: LinkActionCopyIriProps) {
+    const {className, title, ...otherProps} = props;
+    const {link} = useLinkActionContext();
+    const t = useTranslation();
+    if (!(link instanceof RelationLink)) {
+        return null;
+    }
+    return (
+        <LinkAction {...otherProps}
+            className={cx(className, `${CLASS_NAME}__button`, `${CLASS_NAME}__copy-iri`)}
+            title={title ?? t.text('link_action.copy_iri.predicate.title')}
+            onSelect={() => {
+                void navigator.clipboard.writeText(link.data.linkTypeId);
+            }}
+        />
+    );
+}
+
+/**
  * Props for {@link LinkActionRename} component.
  *
  * @see {@link LinkActionRename}

@@ -16,7 +16,7 @@ import { SvgPaperLayer } from '../paper/paperLayers';
 
 import {
     LinkActionContext, LinkActionProvidedContext, LinkActionMoveEndpoint, LinkActionEdit,
-    LinkActionDelete, LinkActionRename,
+    LinkActionDelete, LinkActionRename, LinkActionCopyIri,
 } from './linkAction';
 
 /**
@@ -253,6 +253,7 @@ class HaloLinkInner extends React.Component<HaloLinkInnerProps, State> {
                             {children ?? <>
                                 <LinkActionMoveEndpoint dockSide='target' />
                                 <LinkActionMoveEndpoint dockSide='source' />
+                                <LinkActionCopyIri dockSide='source' dockIndex={1} />
                                 <LinkActionEdit dockSide='target' dockIndex={1} />
                                 <LinkActionDelete dockSide='target' dockIndex={2} />
                                 <LinkActionRename />

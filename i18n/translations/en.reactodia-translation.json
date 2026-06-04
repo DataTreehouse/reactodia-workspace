@@ -137,7 +137,8 @@
     "edit_relation.title_disabled": "Cannot edit the relation",
     "rename_link.title": "Rename link",
     "move_relation.move_source_title": "Move link source",
-    "move_relation.move_target_title": "Move link target"
+    "move_relation.move_target_title": "Move link target",
+    "copy_iri.predicate.title": "Copy predicate IRI to clipboard"
   },
   "navigator": {
     "toggle_collapse.title": "Collapse navigator",
@@ -220,7 +221,8 @@
     "remove.title": "Remove selected elements from the diagram",
     "remove.title_new": "Discard new element",
     "remove.title_single": "Remove an element from the diagram",
-    "zoom_to_fit.title": "Zoom to fit selected elements into view"
+    "zoom_to_fit.title": "Zoom to fit selected elements into view",
+    "copy_iri.title": "Copy entity IRI to clipboard"
   },
   "standard_element": {
     "blank_node": "(blank node)",

@@ -838,6 +838,39 @@ function SelectionActionEstablishAnnotationLink(
 }
 
 /**
+ * Props for {@link SelectionActionCopyIri} component.
+ *
+ * @see {@link SelectionActionCopyIri}
+ */
+export interface SelectionActionCopyIriProps extends SelectionActionStyleProps {}
+
+/**
+ * Selection action component to copy the selected entity IRI to the clipboard.
+ *
+ * This action is visible only if the selected element is an {@link EntityElement}.
+ *
+ * @category Components
+ */
+export function SelectionActionCopyIri(props: SelectionActionCopyIriProps) {
+    const {className, title, ...otherProps} = props;
+    const {model} = useWorkspace();
+    const t = useTranslation();
+    const target = useSingleSelectedElement(model);
+    if (!(target instanceof EntityElement)) {
+        return null;
+    }
+    return (
+        <SelectionAction {...otherProps}
+            className={cx(className, `${CLASS_NAME}__copy-iri`)}
+            title={title ?? t.text('selection_action.copy_iri.title')}
+            onSelect={() => {
+                void navigator.clipboard.writeText(target.iri);
+            }}
+        />
+    );
+}
+
+/**
  * Props for {@link SelectionActionAnnotate} component.
  *
  * @see {@link SelectionActionAnnotate}

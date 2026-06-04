@@ -19,7 +19,8 @@ import { ResizableBox, type ResizableBoxOperation } from './utility/resizableBox
 import {
     SelectionActionRemove, SelectionActionExpand, SelectionActionAnchor,
     SelectionActionConnections, SelectionActionAddToFilter, SelectionActionGroup,
-    SelectionActionEstablishLink, SelectionActionAnnotate, useSingleSelectedElement,
+    SelectionActionEstablishLink, SelectionActionAnnotate, SelectionActionCopyIri,
+    useSingleSelectedElement,
 } from './selectionAction';
 
 /**
@@ -183,6 +184,7 @@ class HaloInner extends React.Component<HaloInnerProps> {
                     <SelectionActionRemove dock='ne' />
                     <SelectionActionExpand dock='s' />
                     <SelectionActionAnchor dock='w' />
+                    <SelectionActionCopyIri dock='n' />
                     <SelectionActionConnections dock='e' />
                     <SelectionActionAddToFilter dock='se' />
                     <SelectionActionAnnotate dock='se' dockColumn={1} />
