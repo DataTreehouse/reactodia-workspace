@@ -16,6 +16,7 @@ import { Element } from '../../diagram/elements';
 import { Vector, SizeProvider } from '../../diagram/geometry';
 import { HtmlSpinner } from '../../diagram/spinner';
 
+import { restoreLinksBetweenElements } from '../../editor/dataDiagramModel';
 import type { DataDiagramModel } from '../../editor/dataDiagramModel';
 import type { EntityElement } from '../../editor/dataElements';
 
@@ -478,6 +479,10 @@ class ClassTreeInner extends React.Component<ClassTreeInnerProps, State> {
         if (placeCreatedEntity) {
             await placeCreatedEntity(element, dropEvent);
         }
+
+        batch.history.execute(restoreLinksBetweenElements(model, {
+            addedElements: [element.iri],
+        }));
 
         batch.store();
         model.setSelection([element]);

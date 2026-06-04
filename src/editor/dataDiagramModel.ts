@@ -633,9 +633,10 @@ export class DataDiagramModel extends DiagramModel implements DataGraphStructure
             return Promise.resolve();
         }
 
-        return this.fetcher
-            .fetchLinks(primaryIris, secondaryIris, linkTypes)
-            .then(links => this.onLinkInfoLoaded(links));
+        return Promise.all([
+            this.fetcher.fetchLinks(primaryIris, secondaryIris, linkTypes),
+            this.fetcher.fetchLinks(secondaryIris, primaryIris, linkTypes),
+        ]).then(([forward, reverse]) => this.onLinkInfoLoaded([...forward, ...reverse]));
     }
 
     /**
