@@ -324,6 +324,7 @@ class OverlaidElement extends React.Component<OverlaidElementProps> {
     private readonly elementRef = React.createRef<HTMLDivElement | null>();
     private readonly decorationsRef = React.createRef<HTMLDivElement | null>();
     private readonly listener = new EventObserver();
+    private resizeObserver: ResizeObserver | undefined;
 
     render(): React.ReactElement<any> {
         const {state: {element, blurred, templateProps}} = this.props;
@@ -396,11 +397,23 @@ class OverlaidElement extends React.Component<OverlaidElementProps> {
 
         if (this.elementRef.current) {
             onResize(state.element, this.elementRef.current);
+            // Detect deferred size changes (e.g. font loading) that happen after
+            // the synchronous syncUpdate() measurement during element placement
+            this.resizeObserver = new ResizeObserver(() => {
+                const {state: currentState, onResize: currentOnResize} = this.props;
+                if (this.elementRef.current) {
+                    currentOnResize(currentState.element, this.elementRef.current);
+                }
+            });
+            this.resizeObserver.observe(this.elementRef.current);
         }
     }
 
     componentWillUnmount() {
         const {state, renderingState} = this.props;
+
+        this.resizeObserver?.disconnect();
+        this.resizeObserver = undefined;
 
         const container = renderingState.ensureDecorationContainer(state.element);
         container.parentElement?.removeChild(container);
