@@ -11,6 +11,7 @@ import {
     mountOnLoad,
     tryLoadLayoutFromLocalStorage,
 } from './resources/common';
+import { ToolbarActionRefresh } from './resources/refreshAction';
 const Layouts = Reactodia.defineLayoutWorker(() => new Worker(
     new URL('../src/layout.worker.ts', import.meta.url),
     {type: 'module'}
@@ -65,6 +66,7 @@ function ClassicWorkspaceExample() {
                 toolbar={{
                     menu: (
                         <>
+                            <ToolbarActionRefresh baseUrl='@BASE_URL@' />
                             <ExampleToolbarMenu />
                         </>
                     ),

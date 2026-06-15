@@ -121,7 +121,7 @@ export class HttpApiDataProvider implements DataProvider {
             body: body !== undefined ? JSON.stringify(body) : undefined,
             credentials: 'same-origin',
             mode: 'cors',
-            cache: 'default',
+            cache: 'no-cache',
             signal,
         });
         if (!response.ok) {
