@@ -92,6 +92,8 @@ export function collectClassInfo(
                     model.count = model.count === undefined
                         ? instanceCount
                         : Math.max(model.count, instanceCount);
+                } else {
+                    model.count = 0
                 }
             }
         } else {

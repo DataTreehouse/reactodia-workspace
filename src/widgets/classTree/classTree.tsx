@@ -612,6 +612,14 @@ function sortTree(roots: ReadonlyArray<TreeNode>): ReadonlyArray<TreeNode> {
         return TreeNode.setDerived(node, mapNodes(node.derived));
     }
     function compareByLabel(left: TreeNode, right: TreeNode) {
+        if  (left.data != undefined && left.data.count != undefined && right.data != undefined && right.data.count != undefined) {
+            if (left.data.count > 0 && right.data.count < 1) {
+              return -1;
+            }
+            if (left.data.count < 1 && right.data.count > 0) {
+              return 1;
+            }
+        }
         return left.label.localeCompare(right.label);
     }
     return mapNodes(roots);
